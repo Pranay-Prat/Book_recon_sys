@@ -1,21 +1,23 @@
-import { useEffect, useState, useRef } from "react";
+import  { useEffect, useState, useRef } from "react";
 import LoadingSpinner from "./components/LoadingSpinner";
 import BookIcon from "./components/BookIcon";
 import BookCard from "./components/BookCard";
-
 import type { Book } from "./components/BookCard";
+
+// ✅ Use environment variable (set in .env file as VITE_API_BASE_URL)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ;
 
 export default function App() {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [results, setResults] = useState<Book[]>([]); 
+  const [results, setResults] = useState<Book[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isSelectionMade = useRef(false);
 
   useEffect(() => {
     if (isSelectionMade.current) {
-      isSelectionMade.current = false; 
+      isSelectionMade.current = false;
       return;
     }
 
@@ -26,7 +28,7 @@ export default function App() {
 
     const timer = setTimeout(() => {
       handleSearch(query);
-    }, 300); // 300ms debounce
+    }, 300); // debounce
 
     return () => clearTimeout(timer);
   }, [query]);
@@ -34,11 +36,12 @@ export default function App() {
   const handleSearch = async (text: string) => {
     setError(null);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/search?query=${text}`);
+      const res = await fetch(`${API_BASE_URL}/search?query=${encodeURIComponent(text)}`);
       if (!res.ok) throw new Error("Search failed");
       setSuggestions(await res.json());
     } catch (err) {
-      setError("Could not fetch suggestions. Is the server running?");
+      console.error(err);
+      setError("Could not fetch suggestions. Is the backend running?");
       setSuggestions([]);
     }
   };
@@ -47,12 +50,12 @@ export default function App() {
     setLoading(true);
     setResults([]);
     setError(null);
-    isSelectionMade.current = true; 
-    setQuery(title); 
-    setSuggestions([]); 
+    isSelectionMade.current = true;
+    setQuery(title);
+    setSuggestions([]);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/recommend", {
+      const res = await fetch(`${API_BASE_URL}/recommend`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title }),
@@ -66,29 +69,30 @@ export default function App() {
         setLoading(false);
         return;
       }
+
       const booksArr: Book[] = data.titles.map((t: string) => ({
         title: t,
-        cover_url: null, 
+        cover_url: null,
         book_url: null,
       }));
 
       setResults(booksArr);
       setLoading(false);
+
+      // fetch covers asynchronously
       data.titles.forEach(async (t: string, i: number) => {
         try {
           const r = await fetch(
             `https://openlibrary.org/search.json?title=${encodeURIComponent(t)}`
           );
           if (!r.ok) throw new Error("OpenLibrary search failed");
-          
+
           const d = await r.json();
           const doc = d?.docs?.[0];
-          
           const coverId = doc?.cover_i || null;
           const cover = coverId
             ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg`
-            : false; 
-
+            : false;
           const book_url = doc?.key
             ? `https://openlibrary.org${doc.key}`
             : null;
@@ -96,13 +100,13 @@ export default function App() {
           setResults((prev) => {
             const copy = [...prev];
             if (copy[i]) {
-              copy[i] = { ...copy[i], cover_url: cover, book_url: book_url };
+              copy[i] = { ...copy[i], cover_url: cover, book_url };
             }
             return copy;
           });
         } catch (coverError) {
           console.error(`Failed to fetch cover for ${t}:`, coverError);
-           setResults((prev) => {
+          setResults((prev) => {
             const copy = [...prev];
             if (copy[i]) {
               copy[i] = { ...copy[i], cover_url: false, book_url: null };
@@ -112,7 +116,8 @@ export default function App() {
         }
       });
     } catch (err) {
-      setError("Could not get recommendations. Is the server running?");
+      console.error(err);
+      setError("Could not get recommendations. Is the backend running?");
       setLoading(false);
       setResults([]);
     }
@@ -151,7 +156,7 @@ export default function App() {
         )}
       </div>
 
-      {/* Loading State */}
+      {/* Loading */}
       {loading && (
         <div className="flex items-center gap-3 text-lg font-semibold text-blue-600 mt-8">
           <LoadingSpinner />
@@ -159,14 +164,14 @@ export default function App() {
         </div>
       )}
 
-      {/* Error State */}
+      {/* Error */}
       {error && (
         <div className="mt-8 p-4 bg-red-100 border border-red-300 text-red-700 rounded-lg max-w-xl w-full text-center">
           <strong>Error:</strong> {error}
         </div>
       )}
 
-      {/* Results Grid */}
+      {/* Results */}
       <div className="w-full max-w-7xl">
         {results.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 sm:gap-8 pt-8">
@@ -176,7 +181,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Welcome / Empty State */}
+        {/* Empty state */}
         {!loading && results.length === 0 && !error && (
           <div className="flex flex-col items-center gap-4 text-center mt-16 text-slate-500">
             <BookIcon className="w-24 h-24" />
@@ -191,4 +196,3 @@ export default function App() {
     </div>
   );
 }
-
