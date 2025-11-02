@@ -5,9 +5,11 @@ import numpy as np
 from scipy.sparse import load_npz
 import requests
 from fastapi.middleware.cors import CORSMiddleware
+import os
 
 app = FastAPI()
 
+# Enable CORS for all origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,6 +17,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------- Utility Functions ----------
 
 def load_sparse_matrix(filename):
     return load_npz(filename)
@@ -35,7 +39,6 @@ def recon(book, book_list, simi_matrix):
     similar_indices = get_similar_books(book_index, simi_matrix)
     return book_list.iloc[similar_indices]['Title'].tolist()
 
-
 def fetch_book_data(title):
     query = f"https://openlibrary.org/search.json?title={title}"
     response = requests.get(query)
@@ -50,23 +53,34 @@ def fetch_book_data(title):
             return {"cover_url": cover_url, "book_url": book_url}
     return {"cover_url": None, "book_url": None}
 
-simi_matrix = load_sparse_matrix("simi_sparse.npz")
-book_list = pickle.load(open("books.pkl", "rb"))
+# ---------- Load Models and Data Safely ----------
+
+# Compute absolute paths so it works on Vercel or anywhere
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SIM_MATRIX_PATH = os.path.join(BASE_DIR, "simi_sparse.npz")
+BOOKS_PATH = os.path.join(BASE_DIR, "books.pkl")
+
+# Load your precomputed data
+simi_matrix = load_sparse_matrix(SIM_MATRIX_PATH)
+book_list = pickle.load(open(BOOKS_PATH, "rb"))
+
+# ---------- API Models ----------
 
 class BookRequest(BaseModel):
     title: str
 
+# ---------- API Routes ----------
+
 @app.get("/books")
 def get_books():
     return list(book_list["Title"].values)
+
 @app.get("/search")
 def search_books(query: str):
     # case-insensitive partial match
     results = book_list[book_list['Title'].str.contains(query, case=False, na=False)]
     return list(results['Title'].values[:15])  # limit to top 15 matches
 
-
-@app.post("/recommend")
 @app.post("/recommend")
 def recommend(data: BookRequest):
     recs = recon(data.title, book_list, simi_matrix)
@@ -74,6 +88,5 @@ def recommend(data: BookRequest):
     if not recs:
         return {"error": "Book not found. Please enter a valid title."}
 
-    # ✅ Return only titles → ZERO delay
+    # ✅ Return only titles → minimal latency
     return {"titles": recs}
-
